@@ -1,0 +1,7 @@
+[project]
+name = "binance-fetch-spot-list"
+version = "0.1.0"
+description = "Fetch binance spot markets list for now"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["ccxt>=4.4.94"]
