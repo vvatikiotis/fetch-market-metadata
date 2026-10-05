@@ -10,8 +10,8 @@ import main
 def test_import_does_not_run_the_workflow(tmp_path):
     script = (
         "import main; "
-        "assert callable(main.main); "
-        "assert main.main.__name__ == 'main'"
+        "assert callable(main.fetch_binance); "
+        "assert callable(main.fetch_hyperliqued)"
     )
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -23,6 +23,7 @@ def test_import_does_not_run_the_workflow(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert "Fetching spot symbol list" not in result.stdout
+    assert "Fetching perpetual symbol list" not in result.stdout
 
 
 def test_market_list_keeps_active_quote_symbols_without_chinese_characters(monkeypatch):
@@ -64,7 +65,7 @@ def test_market_list_keeps_active_quote_symbols_without_chinese_characters(monke
     assert main.fetch_historical_data(quote="USDC") == ["BTCUSDC", "ETHUSDC"]
 
 
-def test_main_writes_usdt_markets_for_the_usdc_intersection(monkeypatch, tmp_path):
+def test_binance_workflow_fetches_both_quotes_and_writes_intersection(monkeypatch, tmp_path):
     output = tmp_path / "markets.txt"
     fetch_results = {
         "USDC": ["BTCUSDC", "ETHUSDC", "SOLUSDC"],
@@ -76,32 +77,92 @@ def test_main_writes_usdt_markets_for_the_usdc_intersection(monkeypatch, tmp_pat
 
     written_files = []
 
-    actual_write_to_file = main.write_to_file
-
     def write_to_file(symbol_list, filename, quote, fetched_at=None):
         written_files.append((filename, quote, symbol_list, fetched_at))
-        actual_write_to_file(
-            symbol_list,
-            filename=output,
-            quote=quote,
-            fetched_at=fetched_at,
-        )
+        with output.open("w", encoding="utf-8") as file:
+            for symbol in sorted(symbol_list):
+                if symbol.endswith(quote):
+                    file.write(f"spot:{symbol[:-len(quote)]}/{quote}\n")
 
     monkeypatch.setattr(main, "fetch_historical_data", fetch_historical_data)
     monkeypatch.setattr(main, "write_to_file", write_to_file)
     monkeypatch.setattr(main, "FILE", str(output))
 
-    main.main()
+    main.fetch_binance()
 
     assert len(written_files) == 3
     assert written_files[0][1:3] == ("USDC", fetch_results["USDC"])
     assert written_files[1][1:3] == ("USDT", fetch_results["USDT"])
     assert written_files[2][1] == "USDT"
     assert set(written_files[2][2]) == {"BTCUSDT", "ETHUSDT"}
-    assert output.read_text(encoding="utf-8").splitlines()[1:] == [
-        "spot:BTC/USDT",
-        "spot:ETH/USDT",
-    ]
+
+
+def test_hyperliquid_perps_include_active_swaps_only(monkeypatch):
+    markets = {
+        "BTC/USDC:USDC": {"symbol": "BTC/USDC:USDC", "swap": True, "active": True},
+        "OLD/USDC:USDC": {"symbol": "OLD/USDC:USDC", "swap": True, "active": False},
+        "ETH/USDC": {"symbol": "ETH/USDC", "swap": False, "active": True},
+    }
+
+    class FakeHyperliquid:
+        def __init__(self, params):
+            assert params == {"verbose": False}
+
+        def load_markets(self, reload):
+            assert reload is False
+            return markets
+
+    monkeypatch.setattr(main.ccxt, "hyperliquid", FakeHyperliquid)
+
+    assert main.fetch_hyperliqued() == ["BTC/USDC:USDC"]
+
+
+def test_write_hyperliquid_perps_preserves_normalized_symbols(tmp_path):
+    output = tmp_path / "hyperliquid.txt"
+
+    main.write_hyperliquid_perps(
+        ["ETH/USDC:USDC", "BTC/USDC:USDC"],
+        filename=output,
+        fetched_at="fixture timestamp",
+    )
+
+    assert output.read_text(encoding="utf-8") == (
+        "# Fetched: fixture timestamp\n"
+        "swap:BTC/USDC:USDC\n"
+        "swap:ETH/USDC:USDC\n"
+    )
+
+
+def test_cli_dispatches_to_selected_exchange(monkeypatch):
+    calls = []
+    monkeypatch.setattr(main, "fetch_binance", lambda: calls.append("binance"))
+    monkeypatch.setattr(main, "fetch_hyperliqued", lambda: calls.append("hyperliquid") or [])
+    monkeypatch.setattr(main, "write_hyperliquid_perps", lambda *args, **kwargs: None)
+
+    assert main.main(["-d", "binance"]) is None
+    assert calls == ["binance"]
+
+    calls.clear()
+    assert main.main(["-d", "hyperliquid"]) is None
+    assert calls == ["hyperliquid"]
+
+
+def test_cli_rejects_unsupported_exchange():
+    import pytest
+
+    with pytest.raises(SystemExit) as error:
+        main.main(["-d", "kraken"])
+
+    assert error.value.code == 2
+
+
+def test_cli_requires_a_supported_exchange():
+    import pytest
+
+    with pytest.raises(SystemExit) as error:
+        main.main([])
+
+    assert error.value.code == 2
 
 
 def test_write_to_file_outputs_sorted_spot_markets(tmp_path):

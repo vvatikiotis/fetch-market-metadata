@@ -1,12 +1,14 @@
+import argparse
 from datetime import datetime
 from enum import Enum
 
 import ccxt
 
 Market_Type = Enum("Market_Type", ["spot", "swaps_linear", "swaps_inverse", "futures"])
-Exchange = Enum("Exchange", ["binance"])
+Exchange = Enum("Exchange", ["binance", "hyperliquid"])
 
 FILE = "/Users/vatikiot/devel/Trading/data/binance_market_list"
+HYPERLIQUID_FILE = "/Users/vatikiot/devel/Trading/data/hyperliquid_market_list"
 
 
 def contains_chinese_characters(value):
@@ -26,7 +28,8 @@ def fetch_historical_data(
     verbose=False,
     reload=False,
 ):
-    print(f"Fetching spot symbol list -- {quote}\n")
+    market_label = "spot" if market_type == Market_Type.spot else "perpetual"
+    print(f"Fetching {market_label} symbol list -- {quote}\n")
 
     params = {}
     if market_type == Market_Type.spot:
@@ -34,8 +37,10 @@ def fetch_historical_data(
     elif market_type == Market_Type.swaps_linear:
         params = {"verbose": verbose, "options": {"fetchMarkets": ["linear"]}}
 
-    if exchange:
+    if exchange == Exchange.binance:
         _exchange = ccxt.binance(params)
+    elif exchange == Exchange.hyperliquid:
+        _exchange = ccxt.hyperliquid({"verbose": verbose})
     else:
         return "No exchange is set"
 
@@ -44,7 +49,13 @@ def fetch_historical_data(
     # print(json.dumps(markets, indent=4))
     if symbols == "all":
         symbols = []
-        if market_type == Market_Type.spot:
+        if exchange == Exchange.hyperliquid and market_type == Market_Type.swaps_linear:
+            symbols = [
+                market["symbol"]
+                for market in markets.values()
+                if market.get("swap") and market.get("active")
+            ]
+        elif market_type == Market_Type.spot:
             symbols = [
                 symbol["id"]
                 for _, symbol in markets.items()
@@ -152,12 +163,16 @@ def write_to_file(symbol_list, filename=FILE, quote="USDT", fetched_at=None):
                 file.write(f"spot:{symbol[:-len(quote)]}/{quote}\n")
 
 
-def main():
+def format_fetched_at():
     now = datetime.now().astimezone()
     utc_offset = now.strftime("%z")
     utc_offset = f"{utc_offset[:3]}:{utc_offset[3:]}" if utc_offset else ""
     fetched_at = now.strftime("%A, %B %d, %Y at %H:%M:%S %Z")
-    fetched_at += f" (UTC{utc_offset})"
+    return fetched_at + f" (UTC{utc_offset})"
+
+
+def fetch_binance():
+    fetched_at = format_fetched_at()
 
     quote = "USDC"
     symbol_list = fetch_historical_data(quote=quote)
@@ -186,6 +201,40 @@ Note: Binance supports much less USDC pairs than USDT series.
 So I fetch both sets and I do an intersection.
 Result: I keep all USDT pairs that also have a USDC pair"""
     print(comment)
+
+
+def fetch_hyperliqued(reload=False):
+    return fetch_historical_data(
+        exchange=Exchange.hyperliquid,
+        market_type=Market_Type.swaps_linear,
+        reload=reload,
+    )
+
+
+def write_hyperliquid_perps(symbols, filename=HYPERLIQUID_FILE, fetched_at=None):
+    print(f"Writing to file {filename}\n\n{symbols}\n")
+    with open(filename, "w", encoding="utf-8") as file:
+        if fetched_at is not None:
+            file.write(f"# Fetched: {fetched_at}\n")
+        for symbol in sorted(symbols, key=str.lower):
+            file.write(f"swap:{symbol}\n")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-d",
+        required=True,
+        choices=("binance", "hyperliquid"),
+        help="exchange to fetch metadata from",
+    )
+    args = parser.parse_args(argv)
+
+    if args.d == "binance":
+        fetch_binance()
+    else:
+        symbols = fetch_hyperliqued()
+        write_hyperliquid_perps(symbols, fetched_at=format_fetched_at())
 
 
 if __name__ == "__main__":
