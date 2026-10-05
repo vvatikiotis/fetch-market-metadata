@@ -5,3 +5,6 @@ description = "Fetch binance spot markets list for now"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["ccxt>=4.4.94"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]

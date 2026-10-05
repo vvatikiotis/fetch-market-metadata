@@ -154,36 +154,41 @@ def write_to_file(symbol_list, filename=FILE, quote="USDT", fetched_at=None):
                 file.write(f"spot:{symbol[:-len(quote)]}/{quote}\n")
 
 
-now = datetime.now().astimezone()
-utc_offset = now.strftime("%z")
-utc_offset = f"{utc_offset[:3]}:{utc_offset[3:]}" if utc_offset else ""
-fetched_at = now.strftime("%A, %B %d, %Y at %H:%M:%S %Z")
-fetched_at += f" (UTC{utc_offset})"
+def main():
+    now = datetime.now().astimezone()
+    utc_offset = now.strftime("%z")
+    utc_offset = f"{utc_offset[:3]}:{utc_offset[3:]}" if utc_offset else ""
+    fetched_at = now.strftime("%A, %B %d, %Y at %H:%M:%S %Z")
+    fetched_at += f" (UTC{utc_offset})"
 
-quote = "USDC"
-symbol_list = fetch_historical_data(quote=quote)
-write_to_file(symbol_list=symbol_list, filename=f"{FILE}.{quote}", quote=quote)
+    quote = "USDC"
+    symbol_list = fetch_historical_data(quote=quote)
+    write_to_file(symbol_list=symbol_list, filename=f"{FILE}.{quote}", quote=quote)
 
-USDC_symbols = list(map(lambda x: x.removesuffix(quote), symbol_list))
+    usdc_symbols = list(map(lambda x: x.removesuffix(quote), symbol_list))
 
-quote = "USDT"
-symbol_list = fetch_historical_data(quote=quote)
-write_to_file(symbol_list=symbol_list, filename=f"{FILE}.{quote}", quote=quote)
+    quote = "USDT"
+    symbol_list = fetch_historical_data(quote=quote)
+    write_to_file(symbol_list=symbol_list, filename=f"{FILE}.{quote}", quote=quote)
 
-USDT_symbols = list(map(lambda x: x.removesuffix(quote), symbol_list))
+    usdt_symbols = list(map(lambda x: x.removesuffix(quote), symbol_list))
 
-common_symbols = set(USDT_symbols).intersection(set(USDC_symbols))
-final_list = list(map(lambda x: x + "USDT", common_symbols))
-write_to_file(
-    symbol_list=final_list,
-    filename=f"{FILE}",
-    quote="USDT",
-    fetched_at=fetched_at,
-)
+    common_symbols = set(usdt_symbols).intersection(set(usdc_symbols))
+    final_list = list(map(lambda x: x + "USDT", common_symbols))
+    write_to_file(
+        symbol_list=final_list,
+        filename=f"{FILE}",
+        quote="USDT",
+        fetched_at=fetched_at,
+    )
 
-comment = """\n'm forced to trade USDC pairs due to MiCA.
+    comment = """\n'm forced to trade USDC pairs due to MiCA.
 However, Binance USDC timeseries quality is not as good as the USDT.
 Note: Binance supports much less USDC pairs than USDT series.
 So I fetch both sets and I do an intersection.
 Result: I keep all USDT pairs that also have a USDC pair"""
-print(comment)
+    print(comment)
+
+
+if __name__ == "__main__":
+    main()
