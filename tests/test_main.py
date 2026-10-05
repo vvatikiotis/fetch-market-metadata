@@ -11,7 +11,8 @@ def test_import_does_not_run_the_workflow(tmp_path):
     script = (
         "import main; "
         "assert callable(main.fetch_binance); "
-        "assert callable(main.fetch_hyperliqued)"
+        "assert callable(main.fetch_hyperliqued); "
+        "assert callable(main.fetch_kraken)"
     )
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -118,6 +119,108 @@ def test_hyperliquid_perps_include_active_swaps_only(monkeypatch):
     assert main.fetch_hyperliqued() == ["BTC/USDC:USDC"]
 
 
+def test_kraken_market_list_keeps_active_quote_spot_markets(monkeypatch):
+    markets = {
+        "BTC/USDC": {
+            "id": "XBTUSDC",
+            "symbol": "BTC/USDC",
+            "spot": True,
+            "active": True,
+            "quote": "USDC",
+        },
+        "OLD/USDC": {
+            "id": "OLDUSDC",
+            "symbol": "OLD/USDC",
+            "spot": True,
+            "active": False,
+            "quote": "USDC",
+        },
+        "BTC/USD": {
+            "id": "XXBTZUSD",
+            "symbol": "BTC/USD",
+            "spot": True,
+            "active": True,
+            "quote": "USD",
+        },
+        "BTC/USDC:USDC": {
+            "id": "BTCUSDC",
+            "symbol": "BTC/USDC:USDC",
+            "spot": False,
+            "active": True,
+            "quote": "USDC",
+        },
+        "中/USDC": {
+            "id": "CNUSDC",
+            "symbol": "中/USDC",
+            "spot": True,
+            "active": True,
+            "quote": "USDC",
+        },
+    }
+
+    class FakeKraken:
+        def __init__(self, params):
+            assert params == {"verbose": False}
+
+        def load_markets(self, reload):
+            assert reload is False
+            return markets
+
+    monkeypatch.setattr(main.ccxt, "kraken", FakeKraken)
+
+    assert main.fetch_historical_data(
+        exchange=main.Exchange.kraken,
+        market_type=main.Market_Type.spot,
+        quote="USDC",
+    ) == ["BTC/USDC"]
+
+
+def test_write_kraken_spots_outputs_sorted_normalized_symbols(tmp_path):
+    output = tmp_path / "kraken.txt"
+
+    main.write_kraken_spots(
+        ["SUPER/USDC", "ETH/USDC", "BTC/USDC", "中/USDC"],
+        filename=output,
+        fetched_at="fixture timestamp",
+    )
+
+    assert output.read_text(encoding="utf-8") == (
+        "# Fetched: fixture timestamp\n"
+        "spot:BTC/USDC\n"
+        "spot:ETH/USDC\n"
+        "spot:SUPER/USDC\n"
+    )
+
+
+def test_kraken_workflow_fetches_usdc_and_writes_timestamped_file(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(main, "format_fetched_at", lambda: "fixture timestamp")
+    monkeypatch.setattr(
+        main,
+        "fetch_historical_data",
+        lambda **kwargs: calls.append(kwargs) or ["BTC/USDC"],
+    )
+    monkeypatch.setattr(
+        main,
+        "write_kraken_spots",
+        lambda symbols, filename, fetched_at: calls.append(
+            (symbols, filename, fetched_at)
+        ),
+    )
+    monkeypatch.setattr(main, "KRAKEN_FILE", str(tmp_path / "kraken.txt"))
+
+    assert main.fetch_kraken(reload=True) is None
+    assert calls == [
+        {
+            "exchange": main.Exchange.kraken,
+            "market_type": main.Market_Type.spot,
+            "quote": "USDC",
+            "reload": True,
+        },
+        (["BTC/USDC"], str(tmp_path / "kraken.txt"), "fixture timestamp"),
+    ]
+
+
 def test_write_hyperliquid_perps_preserves_normalized_symbols(tmp_path):
     output = tmp_path / "hyperliquid.txt"
 
@@ -138,6 +241,7 @@ def test_cli_dispatches_to_selected_exchange(monkeypatch):
     calls = []
     monkeypatch.setattr(main, "fetch_binance", lambda: calls.append("binance"))
     monkeypatch.setattr(main, "fetch_hyperliqued", lambda: calls.append("hyperliquid") or [])
+    monkeypatch.setattr(main, "fetch_kraken", lambda: calls.append("kraken"))
     monkeypatch.setattr(main, "write_hyperliquid_perps", lambda *args, **kwargs: None)
 
     assert main.main(["-d", "binance"]) is None
@@ -147,12 +251,16 @@ def test_cli_dispatches_to_selected_exchange(monkeypatch):
     assert main.main(["-d", "hyperliquid"]) is None
     assert calls == ["hyperliquid"]
 
+    calls.clear()
+    assert main.main(["-d", "kraken"]) is None
+    assert calls == ["kraken"]
+
 
 def test_cli_rejects_unsupported_exchange():
     import pytest
 
     with pytest.raises(SystemExit) as error:
-        main.main(["-d", "kraken"])
+        main.main(["-d", "coinbase"])
 
     assert error.value.code == 2
 

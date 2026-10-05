@@ -5,10 +5,11 @@ from enum import Enum
 import ccxt
 
 Market_Type = Enum("Market_Type", ["spot", "swaps_linear", "swaps_inverse", "futures"])
-Exchange = Enum("Exchange", ["binance", "hyperliquid"])
+Exchange = Enum("Exchange", ["binance", "hyperliquid", "kraken"])
 
 BINANCE_FILE = "/Users/vatikiot/devel/Trading/data/binance_market_list"
 HYPERLIQUID_FILE = "/Users/vatikiot/devel/Trading/data/hyperliquid_market_list"
+KRAKEN_FILE = "/Users/vatikiot/devel/Trading/data/kraken_market_list"
 
 
 def contains_chinese_characters(value):
@@ -41,6 +42,8 @@ def fetch_historical_data(
         _exchange = ccxt.binance(params)
     elif exchange == Exchange.hyperliquid:
         _exchange = ccxt.hyperliquid({"verbose": verbose})
+    elif exchange == Exchange.kraken:
+        _exchange = ccxt.kraken({"verbose": verbose})
     else:
         return "No exchange is set"
 
@@ -57,6 +60,15 @@ def fetch_historical_data(
                 market["symbol"]
                 for market in markets
                 if market.get("active")
+            ]
+        elif exchange == Exchange.kraken and market_type == Market_Type.spot:
+            symbols = [
+                market["symbol"]
+                for market in markets.values()
+                if market.get("spot")
+                and market.get("active")
+                and market.get("quote") == quote
+                and not contains_chinese_characters(market["symbol"])
             ]
         elif market_type == Market_Type.spot:
             symbols = [
@@ -166,6 +178,31 @@ def write_to_file(symbol_list, filename=BINANCE_FILE, quote="USDT", fetched_at=N
                 file.write(f"spot:{symbol[:-len(quote)]}/{quote}\n")
 
 
+def write_kraken_spots(symbols, filename=KRAKEN_FILE, fetched_at=None):
+    print(f"Writing to file {filename}\n\n{symbols}\n")
+    with open(filename, "w", encoding="utf-8") as file:
+        if fetched_at is not None:
+            file.write(f"# Fetched: {fetched_at}\n")
+        for symbol in sorted(symbols, key=str.lower):
+            if not contains_chinese_characters(symbol):
+                file.write(f"spot:{symbol}\n")
+
+
+def fetch_kraken(reload=False):
+    fetched_at = format_fetched_at()
+    symbols = fetch_historical_data(
+        exchange=Exchange.kraken,
+        market_type=Market_Type.spot,
+        quote="USDC",
+        reload=reload,
+    )
+    write_kraken_spots(
+        symbols,
+        filename=KRAKEN_FILE,
+        fetched_at=fetched_at,
+    )
+
+
 def format_fetched_at():
     now = datetime.now().astimezone()
     utc_offset = now.strftime("%z")
@@ -228,16 +265,18 @@ def main(argv=None):
     parser.add_argument(
         "-d",
         required=True,
-        choices=("binance", "hyperliquid"),
+        choices=("binance", "hyperliquid", "kraken"),
         help="exchange to fetch metadata from",
     )
     args = parser.parse_args(argv)
 
     if args.d == "binance":
         fetch_binance()
-    else:
+    elif args.d == "hyperliquid":
         symbols = fetch_hyperliqued()
         write_hyperliquid_perps(symbols, fetched_at=format_fetched_at())
+    else:
+        fetch_kraken()
 
 
 if __name__ == "__main__":
