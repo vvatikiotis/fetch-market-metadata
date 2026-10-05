@@ -1,5 +1,3 @@
-#!/usr/bin/env bash
-
 from datetime import datetime
 from enum import Enum
 
