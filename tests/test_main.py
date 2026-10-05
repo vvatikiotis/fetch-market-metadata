@@ -86,7 +86,7 @@ def test_binance_workflow_fetches_both_quotes_and_writes_intersection(monkeypatc
 
     monkeypatch.setattr(main, "fetch_historical_data", fetch_historical_data)
     monkeypatch.setattr(main, "write_to_file", write_to_file)
-    monkeypatch.setattr(main, "FILE", str(output))
+    monkeypatch.setattr(main, "BINANCE_FILE", str(output))
 
     main.fetch_binance()
 
@@ -98,19 +98,20 @@ def test_binance_workflow_fetches_both_quotes_and_writes_intersection(monkeypatc
 
 
 def test_hyperliquid_perps_include_active_swaps_only(monkeypatch):
-    markets = {
-        "BTC/USDC:USDC": {"symbol": "BTC/USDC:USDC", "swap": True, "active": True},
-        "OLD/USDC:USDC": {"symbol": "OLD/USDC:USDC", "swap": True, "active": False},
-        "ETH/USDC": {"symbol": "ETH/USDC", "swap": False, "active": True},
-    }
+    markets = [
+        {"symbol": "BTC/USDC:USDC", "active": True},
+        {"symbol": "OLD/USDC:USDC", "active": False},
+    ]
 
     class FakeHyperliquid:
         def __init__(self, params):
             assert params == {"verbose": False}
 
-        def load_markets(self, reload):
-            assert reload is False
+        def fetch_swap_markets(self):
             return markets
+
+        def load_markets(self, reload):
+            raise TypeError("spot metadata contains a token index without a token")
 
     monkeypatch.setattr(main.ccxt, "hyperliquid", FakeHyperliquid)
 
@@ -128,8 +129,8 @@ def test_write_hyperliquid_perps_preserves_normalized_symbols(tmp_path):
 
     assert output.read_text(encoding="utf-8") == (
         "# Fetched: fixture timestamp\n"
-        "swap:BTC/USDC:USDC\n"
-        "swap:ETH/USDC:USDC\n"
+        "perp:BTC/USDC\n"
+        "perp:ETH/USDC\n"
     )
 
 

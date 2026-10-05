@@ -7,7 +7,7 @@ import ccxt
 Market_Type = Enum("Market_Type", ["spot", "swaps_linear", "swaps_inverse", "futures"])
 Exchange = Enum("Exchange", ["binance", "hyperliquid"])
 
-FILE = "/Users/vatikiot/devel/Trading/data/binance_market_list"
+BINANCE_FILE = "/Users/vatikiot/devel/Trading/data/binance_market_list"
 HYPERLIQUID_FILE = "/Users/vatikiot/devel/Trading/data/hyperliquid_market_list"
 
 
@@ -44,7 +44,10 @@ def fetch_historical_data(
     else:
         return "No exchange is set"
 
-    markets = _exchange.load_markets(reload)
+    if exchange == Exchange.hyperliquid and market_type == Market_Type.swaps_linear:
+        markets = _exchange.fetch_swap_markets()
+    else:
+        markets = _exchange.load_markets(reload)
 
     # print(json.dumps(markets, indent=4))
     if symbols == "all":
@@ -52,8 +55,8 @@ def fetch_historical_data(
         if exchange == Exchange.hyperliquid and market_type == Market_Type.swaps_linear:
             symbols = [
                 market["symbol"]
-                for market in markets.values()
-                if market.get("swap") and market.get("active")
+                for market in markets
+                if market.get("active")
             ]
         elif market_type == Market_Type.spot:
             symbols = [
@@ -75,7 +78,7 @@ def fetch_historical_data(
     return symbols
 
 
-def write_to_file(symbol_list, filename=FILE, quote="USDT", fetched_at=None):
+def write_to_file(symbol_list, filename=BINANCE_FILE, quote="USDT", fetched_at=None):
     print(f"Writing to file {filename}\n\n{symbol_list}\n")
 
     symbol_list = [
@@ -176,13 +179,13 @@ def fetch_binance():
 
     quote = "USDC"
     symbol_list = fetch_historical_data(quote=quote)
-    write_to_file(symbol_list=symbol_list, filename=f"{FILE}.{quote}", quote=quote)
+    write_to_file(symbol_list=symbol_list, filename=f"{BINANCE_FILE}.{quote}", quote=quote)
 
     usdc_symbols = list(map(lambda x: x.removesuffix(quote), symbol_list))
 
     quote = "USDT"
     symbol_list = fetch_historical_data(quote=quote)
-    write_to_file(symbol_list=symbol_list, filename=f"{FILE}.{quote}", quote=quote)
+    write_to_file(symbol_list=symbol_list, filename=f"{BINANCE_FILE}.{quote}", quote=quote)
 
     usdt_symbols = list(map(lambda x: x.removesuffix(quote), symbol_list))
 
@@ -190,7 +193,7 @@ def fetch_binance():
     final_list = list(map(lambda x: x + "USDT", common_symbols))
     write_to_file(
         symbol_list=final_list,
-        filename=f"{FILE}",
+        filename=f"{BINANCE_FILE}",
         quote="USDT",
         fetched_at=fetched_at,
     )
@@ -217,7 +220,7 @@ def write_hyperliquid_perps(symbols, filename=HYPERLIQUID_FILE, fetched_at=None)
         if fetched_at is not None:
             file.write(f"# Fetched: {fetched_at}\n")
         for symbol in sorted(symbols, key=str.lower):
-            file.write(f"swap:{symbol}\n")
+            file.write(f"perp:{symbol.split(':', 1)[0]}\n")
 
 
 def main(argv=None):
