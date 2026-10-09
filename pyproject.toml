@@ -8,3 +8,6 @@ dependencies = ["ccxt>=4.5.0"]
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
+
+[tool.uv]
+default-groups = ["dev"]

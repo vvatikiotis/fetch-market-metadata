@@ -57,7 +57,7 @@ def fetch_historical_data(
         symbols = []
         if exchange == Exchange.hyperliquid and market_type == Market_Type.swaps_linear:
             symbols = [
-                market["symbol"]
+                f'{market["info"]["name"]}/USDC'
                 for market in markets
                 if market.get("active")
             ]

@@ -100,8 +100,8 @@ def test_binance_workflow_fetches_both_quotes_and_writes_intersection(monkeypatc
 
 def test_hyperliquid_perps_include_active_swaps_only(monkeypatch):
     markets = [
-        {"symbol": "BTC/USDC:USDC", "active": True},
-        {"symbol": "OLD/USDC:USDC", "active": False},
+        {"symbol": "KBONK/USDC:USDC", "info": {"name": "kBONK"}, "active": True},
+        {"symbol": "OLD/USDC:USDC", "info": {"name": "OLD"}, "active": False},
     ]
 
     class FakeHyperliquid:
@@ -116,7 +116,7 @@ def test_hyperliquid_perps_include_active_swaps_only(monkeypatch):
 
     monkeypatch.setattr(main.ccxt, "hyperliquid", FakeHyperliquid)
 
-    assert main.fetch_hyperliqued() == ["BTC/USDC:USDC"]
+    assert main.fetch_hyperliqued() == ["kBONK/USDC"]
 
 
 def test_kraken_market_list_keeps_active_quote_spot_markets(monkeypatch):
